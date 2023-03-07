@@ -1,0 +1,84 @@
+&pinctrl {
+    i2c0_custom: i2c0_custom{
+        group1{
+            psels = <NRF_PSEL(TWIM_SDA, 0, 28)>,
+                <NRF_PSEL(TWIM_SCL, 0, 29)>;
+        };
+    };
+
+    i2c0_custom_low_power: i2c0_custom_low_power{
+        group1{
+            psels = <NRF_PSEL(TWIM_SDA, 0, 28)>,
+                <NRF_PSEL(TWIM_SCL, 0, 29)>;
+            low-power-enable;
+        };
+    };
+
+    uart0_custom: uart0_custom{
+        group1{
+            psels = < NRF_PSEL(UART_TX, 0, 19) >,
+                <NRF_PSEL(UART_RX, 0, 20)>;
+        };
+    };
+
+    uart0_custom_low_power: uart0_custom_low_power{
+        group1{
+            psels = < NRF_PSEL(UART_TX, 0, 19) >,
+                <NRF_PSEL(UART_RX, 0, 20)>;
+            low-power-enable;
+        };
+    };
+};
+
+
+&i2c0 {
+    status="okay";
+    pinctrl-0 = < &i2c0_custom >;
+    pinctrl-1 = < &i2c0_custom_low_power >;
+    // TODO add MCP3021 driver
+};
+
+&uart0 {
+    status = "okay";
+    pinctrl-0 = < &uart0_custom >;
+    pinctrl-1 = < &uart0_custom_low_power >;
+};
+
+&spi2 {
+    // Disable to remove pin conflict with led
+    status = "disabled";
+};
+
+/{
+    buttons{
+        status = "okay";
+        compatible = "gpio-keys";
+
+        button_input:button_input {
+            gpios = < &gpio0 3 GPIO_ACTIVE_LOW >;
+            label = "input button";
+        };
+    };
+
+    outputs{
+        status = "okay";
+        compatible = "gpio-leds";
+
+        led:led{
+            gpios = < &gpio0 25 GPIO_ACTIVE_LOW >;
+            label = "LED";
+        };
+        out1:out1{
+            gpios = < &gpio0 5 GPIO_ACTIVE_HIGH>;
+            label = "Overhead light";
+        };
+        out2:out2{
+            gpios = < &gpio0 17 GPIO_ACTIVE_HIGH >;
+            label = "Tag authenticated";
+        };
+        out3:out3{
+            gpios = < &gpio0 18 GPIO_ACTIVE_HIGH >;
+            label = "No tag/Unauthenticated tag";
+        };
+    };
+};

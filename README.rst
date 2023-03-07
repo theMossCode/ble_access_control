@@ -1,26 +1,19 @@
-.. _bluetooth_central:
+.. _ble_access_control:
 
-Bluetooth: Central
+Bluetooth: BLE access control
 ##################
 
 Overview
 ********
 
-Application demonstrating very basic BLE Central role functionality by scanning
-for other BLE devices and establishing a connection to the first one with a
-strong enough signal.
+Firmware for a BLE authentication system using ibeacons
 
 
 
 Requirements
 ************
 
-* BlueZ running on the host, or
-* A board with BLE support
 
 Building and Running
 ********************
-This sample can be found under :zephyr_file:`samples/bluetooth/central` in the
-Zephyr tree.
-
-See :ref:`bluetooth samples section <bluetooth-samples>` for details.
+Build using nrf connect for vscode
