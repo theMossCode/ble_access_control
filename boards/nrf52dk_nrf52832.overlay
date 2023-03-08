@@ -55,7 +55,7 @@
         compatible = "gpio-keys";
 
         button_input:button_input {
-            gpios = < &gpio0 3 GPIO_ACTIVE_LOW >;
+            gpios = < &gpio0 3 (GPIO_ACTIVE_LOW | GPIO_OPEN_DRAIN)>;
             label = "input button";
         };
     };

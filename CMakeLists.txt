@@ -6,7 +6,6 @@ project(ble_access_control)
 
 FILE(GLOB app_sources 
   src/*.c
-  src/ble/*.c
 )
 
 target_sources(app PRIVATE
