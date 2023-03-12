@@ -12,8 +12,7 @@
 #include "ble.h"
 #include "encryption.h"
 
-#define DEFAULT_ADDR_FILTER_LEN             25
-
-#define DEFAULT_TIMEOUT_FOR_SCANS_SECONDS   15
+#define DEFAULT_ADDR_FILTER_LEN                 25
+#define DEFAULT_OVERHEAD_LIGHT_TIMEOUT_NO_SCAN  (5 * 60)
 
 #endif

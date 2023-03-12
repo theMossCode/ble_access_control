@@ -5,8 +5,6 @@
 
 LOG_MODULE_REGISTER(OUTPUT);
 
-#define DEFAULT_TIMEOUT_FOR_LIGHT_SECONDS           (5 * 60)
-
 #define LED_LIGHT_NODE                              DT_NODELABEL(led)
 #define OVERHEAD_LIGHT_NODE                         DT_NODELABEL(out1)
 #define AUTHENTICATED_LIGHT_NODE                    DT_NODELABEL(out2)
@@ -18,6 +16,7 @@ struct output_light{
 };
 
 static void overhead_light_timer_exp_cb(struct k_timer *timer);
+uint32_t overhead_light_timeout_period_minutes;
 
 K_MSGQ_DEFINE(output_msgq, sizeof(struct output_msg), 5, 4);
 K_TIMER_DEFINE(overhead_light_timer, overhead_light_timer_exp_cb, NULL);
@@ -62,10 +61,6 @@ static int init_light(struct output_light *light, int initial)
 
 static void toggle_light(struct output_light *light, int state)
 {
-    // if(state == light->current_state){
-    //     return;
-    // }
-
     gpio_pin_set_dt(&light->gpio_spec, state);
 }
 
@@ -78,6 +73,15 @@ static void overhead_light_timer_exp_cb(struct k_timer *timer)
 void output_thread_main()
 {
     LOG_DBG("Start output thread");
+
+    if(read_uicr(TL_UICR_ADDRESS, &overhead_light_timeout_period_minutes)){
+        return;
+    }
+
+    if(overhead_light_timeout_period_minutes >= 0xffffffff){
+        LOG_WRN("Invalid value for overhead light timeout, defaulting to 10 minutes");
+        overhead_light_timeout_period_minutes = 10;
+    }
 
     if(init_light(&led_light, LED_STATE_OFF)){
         return;
@@ -100,14 +104,15 @@ void output_thread_main()
         k_msgq_get(&output_msgq, &msg, K_FOREVER);
         switch(msg.type){
             case OUTPUT_MSG_TYPE_TOGGLE_OVERHEAD_LIGHT:{
-                toggle_light(&overhead_light, msg.state);
                 if(msg.state == 0){
                     k_timer_stop(&overhead_light_timer);
                 }
-                else{
-                    k_timer_start(&overhead_light_timer, K_SECONDS(DEFAULT_TIMEOUT_FOR_LIGHT_SECONDS), K_NO_WAIT);
+                else if(msg.state == 1 && overhead_light.current_state == LIGHT_STATE_OFF){
+                    // restart timer if it was off, otherwise wait for timeout
+                    k_timer_start(&overhead_light_timer, K_MINUTES(overhead_light_timeout_period_minutes), K_NO_WAIT);
                 }
 
+                toggle_light(&overhead_light, msg.state);
                 break;
             }
             case OUTPUT_MSG_TYPE_TOGGLE_LED:{

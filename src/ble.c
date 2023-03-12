@@ -155,7 +155,13 @@ static void device_found(const bt_addr_le_t *addr, int8_t rssi, uint8_t type,
 static void start_scan(void)
 {
 	int err;
-	err = bt_le_scan_start(BT_LE_SCAN_PASSIVE, device_found);
+	struct bt_le_scan_param scan_params = {
+		.interval = 1250,
+		.timeout = 0,
+		.window = 625,
+		.type = BT_LE_SCAN_TYPE_PASSIVE,
+	};
+	err = bt_le_scan_start(&scan_params, device_found);
 	if (err) {
 		LOG_ERR("Scanning failed to start (err %d)\n", err);
 		return;
@@ -201,7 +207,6 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 	LOG_INF("BLE disconnected (reason %d)", reason);
 	bt_conn_unref(conn);
 	default_conn = NULL;
-	start_scan();
 }
 
 static uint8_t attribute_discovered(struct bt_conn *conn, const struct bt_gatt_attr *attr, struct bt_gatt_discover_params *params)
@@ -587,6 +592,13 @@ void ble_thread_main(void)
 				}
 			}
 			authentication_enabled = false;
+			last_scanned_address = NULL;
+		}
+		else if(msg.type == BLE_MSG_START_SCAN){
+			// stop any previous scans
+			stop_scan();
+
+			start_scan();
 		}
 	}
 }

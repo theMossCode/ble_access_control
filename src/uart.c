@@ -110,7 +110,7 @@ static float str_to_float(const char *str)
 
 static int decode_uart_msg()
 {
-    LOG_DBG("parse msg\n%s\nof size%d", rx_buffer, json_len);
+    LOG_INF("parse msg\n%s\nof size%d", rx_buffer, json_len);
     struct update_msg temp_msg;
     int ret = json_obj_parse(rx_buffer, json_len, update_msg_descr, 
                             ARRAY_SIZE(update_msg_descr), &temp_msg);
@@ -132,15 +132,27 @@ static int decode_uart_msg()
 
             int mac_index = 0;
             for(int j=0; j<12; j+=2){
-                char mac_hex = ascii_to_hex(temp_msg.Tags[i][j]);
+                char mac_hex = 0;
+                mac_hex = ascii_to_hex(temp_msg.Tags[i][11-(j+1)]);
                 mac_hex <<= 4;
-                mac_hex |= ascii_to_hex(temp_msg.Tags[i][j+1]);
+                mac_hex |= ascii_to_hex(temp_msg.Tags[i][11-j]);
                 temp_addr.a.val[mac_index++] = mac_hex;
+            }
+
+            char test_str[13];
+            sprintf(test_str, "%02x%02x%02x%02x%02x%02x", temp_addr.a.val[5], temp_addr.a.val[4], 
+                    temp_addr.a.val[3], temp_addr.a.val[2], temp_addr.a.val[1], temp_addr.a.val[0]);
+            LOG_DBG("Test str %s", test_str);
+            if(strcmp(test_str, temp_msg.Tags[i]) != 0){
+                send_uart_resp(UART_MSG_TYPE_UPDATE_MAC, UART_RESP_STATUS_DECODE_FAIL);
+                rx_state = MSG_START_RX;
+                LOG_ERR("Decode check error");
+                return -ENOMSG;
             }
 
             char addr_str[BT_ADDR_LE_STR_LEN];
             bt_addr_le_to_str(&temp_addr, addr_str, BT_ADDR_STR_LEN);
-            LOG_DBG("Decoded address: %s", addr_str);
+            LOG_INF("Decoded address: %s", addr_str);
 
             ret = write_nvs_data(i, temp_addr.a.val, 6);
             if(ret){
@@ -151,7 +163,6 @@ static int decode_uart_msg()
             }
         }
         send_uart_resp(UART_MSG_TYPE_UPDATE_MAC, UART_RESP_STATUS_DECODE_SUCCESS);
-        // TODO notify main of update
     }
     // Variables
     else if(temp_msg.Type == 1){
@@ -166,7 +177,6 @@ static int decode_uart_msg()
 
         send_uart_resp(UART_MSG_TYPE_UPDATE_SETTINGS, UART_RESP_STATUS_DECODE_SUCCESS);
         LOG_INF("Settings updated");
-        // TODO notify main to reboot
     }
 
     rx_state = MSG_START_RX;
@@ -181,7 +191,7 @@ static int get_uart_msg()
         switch(rx_state){
             case MSG_START_RX:{
                 if(c != 0x02){
-                    LOG_ERR("Invalid start tag");
+                    LOG_DBG("Invalid start tag %02x", c);
                     return -EINVAL;
                 }
                 rx_state = MSG_RX_IN_PROGRESS;
@@ -270,9 +280,9 @@ void uart_thread_main()
 
         LOG_INF("Settings updated, reboot...");
         // wait for uart transmission to end
-        k_busy_wait(50000);
+        k_busy_wait(100000); // 100ms
         sys_reboot(SYS_REBOOT_COLD);
     }
 }
 
-K_THREAD_DEFINE(uart_thread, 1024, uart_thread_main, NULL, NULL, NULL, 1, K_ESSENTIAL, 0);
+K_THREAD_DEFINE(uart_thread, 1024, uart_thread_main, NULL, NULL, NULL, 3, K_ESSENTIAL, 0);

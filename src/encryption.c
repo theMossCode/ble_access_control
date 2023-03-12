@@ -13,13 +13,11 @@ mbedtls_ctr_drbg_context ctr_drbg;
 int init_mbedtls_encryption()
 {
     mbedtls_ctr_drbg_init(&ctr_drbg);
-
     return 0;
 }
 
 int generate_random_numbers(uint8_t len, uint8_t *buf)
 {
-    int ret = 0;
     sys_rand_get(buf, len);
     return 0;
 }
