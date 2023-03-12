@@ -14,7 +14,14 @@ struct gpio_callback input_btn_callback;
 
 static void input_btn_pressed_callback(const struct device *dev, struct gpio_callback *cb, gpio_port_pins_t pins)
 {
-    k_event_set(&main_evts, MAIN_EVT_BTN_PRESSED);
+    if(gpio_pin_get_dt(&input_btn_spec)){
+        LOG_DBG("BTN pressed");
+        k_event_set(&main_evts, MAIN_EVT_BTN_PRESSED);
+    }
+    else{
+        k_event_set(&main_evts, MAIN_EVT_BTN_RELEASED);
+        LOG_DBG("BTN released");
+    }
 }
 
 int input_init()
@@ -26,7 +33,7 @@ int input_init()
     }
 
     gpio_init_callback(&input_btn_callback, input_btn_pressed_callback, BIT(input_btn_spec.pin));
-    ret = gpio_pin_interrupt_configure_dt(&input_btn_spec, GPIO_INT_EDGE_TO_ACTIVE);
+    ret = gpio_pin_interrupt_configure_dt(&input_btn_spec, GPIO_INT_EDGE_BOTH);
     if(ret){
         LOG_ERR("Input btn interrupt config fail (err %d)", ret);
         return ret;
@@ -44,7 +51,7 @@ int input_init()
         return ret;
     }
 
-    ret = gpio_pin_set_dt(&input_btn_spec, 1);
+    ret = gpio_pin_set_dt(&input_btn_spec, 0);
     if(ret){
         LOG_ERR("input button init fail (err %d)", ret);
         return ret;

@@ -42,8 +42,6 @@ struct output_light led_light = {
     .gpio_spec = GPIO_DT_SPEC_GET(LED_LIGHT_NODE, gpios)
 };
 
-uint16_t overhead_light_on_timeout_seconds = DEFAULT_TIMEOUT_FOR_LIGHT_SECONDS;
-
 static int init_light(struct output_light *light, int initial)
 {
     int ret = 0;
@@ -100,7 +98,6 @@ void output_thread_main()
     struct output_msg msg;
     while(1){
         k_msgq_get(&output_msgq, &msg, K_FOREVER);
-        LOG_INF("Output msg received(type: %d state: %d)", msg.type, msg.state);
         switch(msg.type){
             case OUTPUT_MSG_TYPE_TOGGLE_OVERHEAD_LIGHT:{
                 toggle_light(&overhead_light, msg.state);
@@ -108,25 +105,21 @@ void output_thread_main()
                     k_timer_stop(&overhead_light_timer);
                 }
                 else{
-                    k_timer_start(&overhead_light_timer, K_SECONDS(overhead_light_on_timeout_seconds), K_NO_WAIT);
+                    k_timer_start(&overhead_light_timer, K_SECONDS(DEFAULT_TIMEOUT_FOR_LIGHT_SECONDS), K_NO_WAIT);
                 }
 
-                LOG_DBG("Toggle overhead light %d", msg.state);
                 break;
             }
             case OUTPUT_MSG_TYPE_TOGGLE_LED:{
                 toggle_light(&led_light, msg.state);
-                LOG_DBG("Toggle LED %d", msg.state);
                 break;
             }
             case OUTPUT_MSG_TYPE_TOGGLE_TAG_AUTHENTICATED:{
                 toggle_light(&authenticated_light, msg.state);
-                LOG_DBG("Toggle authenticated light %d", msg.state);
                 break;
             }
             case OUTPUT_MSG_TOGGLE_TAG_AUTHENTICATION_FAIL:{
                 toggle_light(&authentication_fail_light, msg.state);
-                LOG_DBG("Toggle authentication fail light %d", msg.state);
                 break;
             }
             default:{

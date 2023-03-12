@@ -49,6 +49,11 @@
     status = "disabled";
 };
 
+&uicr {
+    
+};
+
+
 /{
     buttons{
         status = "okay";

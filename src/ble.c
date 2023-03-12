@@ -21,16 +21,30 @@ LOG_MODULE_REGISTER(BLE);
 #define AUTH_EVT_READ_CCC_DISCOVERED		0x08
 #define AUTH_EVT_NOTIFICATIONS_ENABLED		0x10
 #define AUTH_EVT_ATTR_DISCOVER_FAIL			0x20
+#define	AUTH_EVT_DATA_WRITTEN				0x40
+#define AUTH_EVT_RESP_RECEIVED				0x80
 
-#define MAIN_SERVICE_UUID 	BT_UUID_DECLARE_16(0xfea0)
-#define WRITE_CHRC			BT_UUID_DECLARE_16(0xfea1)
-#define READ_CHRC			BT_UUID_DECLARE_16(0xfea2)
+#define MAIN_SERVICE_UUID 					BT_UUID_DECLARE_16(0xfea0)
+#define WRITE_CHRC_UUID						BT_UUID_DECLARE_16(0xfea1)
+#define READ_CHRC_UUID						BT_UUID_DECLARE_16(0xfea2)
 
-bt_addr_le_t test_address1 = {
+// Default addresses if address if none saved to device
+bt_addr_le_t default_address_buf[] = {
+	{
 	.type = BT_ADDR_LE_RANDOM,
-	.a.val={0xfd, 0x20, 0x53, 0xc7, 0x4f, 0xfe},
+	.a.val={0x29, 0x74, 0x06, 0x02, 0x34, 0xdd}
+	},
+	{
+	.type = BT_ADDR_LE_RANDOM,
+	.a.val={0x8a, 0x72, 0x06, 0x02, 0x34, 0xdd}
+	},
+	{
+	.type = BT_ADDR_LE_RANDOM,
+	.a.val={0x85, 0x6e, 0x06, 0x02, 0x34, 0xdd}
+	},	
 };
 
+// address buffer structure
 struct addr_filter_buf{
 	bt_addr_le_t buf[DEFAULT_ADDR_FILTER_LEN];
 	int head;
@@ -58,12 +72,17 @@ K_MSGQ_DEFINE(ble_msgq, sizeof(struct ble_msg), 5, 4);
 K_EVENT_DEFINE(auth_evts);
 
 extern struct k_event main_evts;
+extern uint8_t device_password[8];
 
 struct bt_conn *default_conn;
 bt_addr_le_t *last_scanned_address = NULL;
 struct addr_filter_buf addr_filter;
 struct remote_device_attr_info attr_info = {0, 0, 0}; 
 bool authentication_enabled = false;
+// Transmit buffer
+uint8_t tx_buf[6];
+// Receive buffer
+uint8_t rx_buf[22];
 
 static struct bt_gatt_discover_params d_params = {
 	.start_handle = BT_ATT_FIRST_ATTRIBUTE_HANDLE,
@@ -73,11 +92,13 @@ static struct bt_gatt_discover_params d_params = {
 };
 
 static struct bt_gatt_read_params read_params = {
-	.func = read_chrc_cb
+	.func = read_chrc_cb,
 };
 
 static struct bt_gatt_write_params write_params = {
-	.func = write_chrc_cb
+	.func = write_chrc_cb,
+	.data = tx_buf,
+	.length = sizeof(tx_buf)
 };
 
 static struct bt_gatt_subscribe_params sub_params = {
@@ -111,7 +132,9 @@ static void device_found(const bt_addr_le_t *addr, int8_t rssi, uint8_t type,
         return;
     }
 
-	LOG_DBG("Device found: %s", addr_str);
+	if(bt_addr_le_cmp(addr, last_scanned_address) != 0){
+		LOG_DBG("Device found: %s", addr_str);
+	}
 
 	last_scanned_address = &addr_filter.buf[res];
 
@@ -188,13 +211,13 @@ static uint8_t attribute_discovered(struct bt_conn *conn, const struct bt_gatt_a
 		k_event_set(&auth_evts, AUTH_EVT_PRIMARY_DISCOVERED);
 	}
 	else if(params->type == BT_GATT_DISCOVER_CHARACTERISTIC){
-		if(bt_uuid_cmp(params->uuid, WRITE_CHRC) == 0){
+		if(bt_uuid_cmp(params->uuid, WRITE_CHRC_UUID) == 0){
 			LOG_DBG("Write chrc discovered");
 			struct bt_gatt_chrc *w_chrc = (struct bt_gatt_chrc *)attr->user_data;
 			attr_info.write_chrc_value_handle = w_chrc->value_handle;
 			k_event_set(&auth_evts, AUTH_EVT_WRITE_CHRC_DISCOVERED);
 		}
-		else if(bt_uuid_cmp(params->uuid, READ_CHRC) == 0){
+		else if(bt_uuid_cmp(params->uuid, READ_CHRC_UUID) == 0){
 			LOG_DBG("read chrc discovered");
 			struct bt_gatt_chrc *r_chrc = (struct bt_gatt_chrc *)attr->user_data;
 			attr_info.read_chrc_value_handle = r_chrc->value_handle;
@@ -214,13 +237,24 @@ static uint8_t attribute_discovered(struct bt_conn *conn, const struct bt_gatt_a
 
 static uint8_t read_chrc_cb(struct bt_conn *conn, uint8_t err, struct bt_gatt_read_params *params, const void *data, uint16_t length)
 {
-	// TODO copy data to buffer
+	if(err){
+		LOG_ERR("Read resp fail(err %d)", err);
+		return BT_GATT_ITER_STOP;
+	}
+
+	memcpy(rx_buf, data, length);
+	k_event_set(&auth_evts, AUTH_EVT_RESP_RECEIVED);
 	return BT_GATT_ITER_STOP;
 }
 
 static void write_chrc_cb(struct bt_conn *conn, uint8_t err, struct bt_gatt_write_params *params)
 {
-	// TODO set data written event flag
+	if(err){
+		LOG_ERR("Write data fail(err %d)", err);
+		return;
+	}
+
+	k_event_set(&auth_evts, AUTH_EVT_DATA_WRITTEN);
 }
 
 static uint8_t notify_cb(struct bt_conn *conn, struct bt_gatt_subscribe_params *params, const void *data, uint16_t length)
@@ -229,6 +263,9 @@ static uint8_t notify_cb(struct bt_conn *conn, struct bt_gatt_subscribe_params *
 		LOG_WRN("Notifications disabled");
 		return BT_GATT_ITER_STOP;
 	}
+
+	memcpy(rx_buf, data, length);
+	k_event_set(&auth_evts, AUTH_EVT_RESP_RECEIVED);
 
 	return BT_GATT_ITER_CONTINUE;
 }
@@ -258,7 +295,7 @@ static int discover_attributes()
 	}
 
 	d_params.type = BT_GATT_DISCOVER_CHARACTERISTIC;
-	d_params.uuid = WRITE_CHRC;
+	d_params.uuid = WRITE_CHRC_UUID;
 	ret = bt_gatt_discover(default_conn, &d_params);
 	if(ret){
 		LOG_ERR("Discover write fail(err %d)", ret);
@@ -272,7 +309,7 @@ static int discover_attributes()
 	}
 
 	d_params.type = BT_GATT_DISCOVER_CHARACTERISTIC;
-	d_params.uuid = READ_CHRC;
+	d_params.uuid = READ_CHRC_UUID;
 	ret = bt_gatt_discover(default_conn, &d_params);
 	if(ret){
 		LOG_ERR("Discover read fail(err %d)", ret);
@@ -318,14 +355,153 @@ static int discover_attributes()
 	return 0;
 }
 
+static int write_auth_data(uint8_t *random_vars)
+{
+	int ret = 0;
+
+	tx_buf[0] = 0x13;
+	tx_buf[1] = 0x01;
+	memcpy(&tx_buf[2], random_vars, 4);
+
+	write_params.data = tx_buf;
+	write_params.length = sizeof(tx_buf);
+	write_params.handle = attr_info.write_chrc_value_handle;
+	ret = bt_gatt_write(default_conn, &write_params);
+	if(ret){
+		LOG_ERR("GATT write fail (err %d)", ret);
+		return ret;
+	}
+
+	uint32_t evt = k_event_wait(&auth_evts, AUTH_EVT_DATA_WRITTEN, true, K_SECONDS(5));
+	if(!evt){
+		LOG_ERR("Gatt write timeout");
+		return -ETIMEDOUT;
+	}
+
+	return 0;
+}
+
+static int wait_auth_resp()
+{
+	uint32_t evt = k_event_wait(&auth_evts, AUTH_EVT_RESP_RECEIVED, true, K_SECONDS(5));
+	if(!evt){
+		LOG_WRN("Wait resp timeout, attempting read");
+
+		// No notification received, read data
+		read_params.single.handle = attr_info.read_chrc_value_handle;
+		read_params.single.offset = 0;
+		int ret = bt_gatt_read(default_conn, &read_params);
+		if(ret){
+			LOG_ERR("GATT read fail (err %d)", ret);
+			return ret;
+		}
+
+		evt = k_event_wait(&auth_evts, AUTH_EVT_RESP_RECEIVED, true, K_SECONDS(5));
+		if(!evt){
+			LOG_ERR("Read resp timeout");
+			return -ETIMEDOUT;
+		}
+	}
+
+	if(rx_buf[0] != 0x13 || rx_buf[1] != 0x01){
+		LOG_ERR("Invalid resp");
+		return -EINVAL;
+	}
+	
+	return 0;
+}
+
+static int check_resp_data(uint8_t *random, const bt_addr_le_t *addr)
+{
+	uint8_t raw_data[] = {
+		addr->a.val[0],
+		addr->a.val[1],
+		addr->a.val[2],
+		addr->a.val[3],
+		addr->a.val[4],
+		addr->a.val[5],
+		0xa9,
+		0xb1,
+		random[0],
+		random[1],
+		random[2],
+		random[3],
+		device_password[0],
+		device_password[1],
+		device_password[2],
+		device_password[3],
+		device_password[4],
+		device_password[5],
+		device_password[6],
+		device_password[7]
+	};
+
+	uint8_t md5_checksum_generated[16];
+	uint8_t md5_checksum_received[16];
+
+	LOG_DBG("Received checksum");
+	for(int i=0; i<sizeof(md5_checksum_received); ++i){
+		md5_checksum_received[i] = rx_buf[i];
+		printk("%02x", md5_checksum_received[i]);
+	}
+	LOG_DBG("\n");
+	
+	int ret = 0;
+	ret = generate_md5_checksum(raw_data, sizeof(raw_data), md5_checksum_generated);
+	if(ret){
+		LOG_ERR("Generate md5 fail(err %d)", ret);
+		return ret;
+	}
+
+	LOG_DBG("Generated checksum");
+	for(int i=0; i<sizeof(md5_checksum_generated); ++i){
+		printk("%02x", md5_checksum_generated[i]);
+		k_sleep(K_MSEC(100));
+	}
+	LOG_DBG("\n");
+
+	if(memcmp(md5_checksum_generated, md5_checksum_received, sizeof(md5_checksum_generated)) != 0){
+		LOG_ERR("Checksum not match");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 static void authenticate_remote_device()
 {
 	if(discover_attributes()){
 		k_event_set(&main_evts, MAIN_EVT_BLE_DEVICE_AUTHENTICATION_FAIL);
 		return;
 	}
+	
+	uint8_t random_data[4];
+	int res = 0;
+	res = generate_random_numbers(sizeof(random_data), random_data);
+	if(res){
+		LOG_WRN("RNG fail, using default chars");
+		memset(random_data, 0xff, sizeof(random_data));
+	}
 
-	// TODO data exchange
+	res = write_auth_data(random_data);
+	if(res){
+		k_event_set(&main_evts, MAIN_EVT_BLE_DEVICE_AUTHENTICATION_FAIL);
+		return;
+	}
+
+	res = wait_auth_resp();
+	if(res){
+		k_event_set(&main_evts, MAIN_EVT_BLE_DEVICE_AUTHENTICATION_FAIL);
+		return;
+	}
+
+	res = check_resp_data(random_data, bt_conn_get_dst(default_conn));
+	if(res){
+		LOG_ERR("Authentication fail");
+		k_event_set(&main_evts, MAIN_EVT_BLE_DEVICE_AUTHENTICATION_FAIL);
+		return;
+	}
+
 	k_event_set(&main_evts, MAIN_EVT_BLE_DEVICE_AUTHENTICATED);
 }
 
@@ -336,9 +512,33 @@ BT_CONN_CB_DEFINE(conn_callbacks) = {
 
 static int init_addr_filter()
 {
-	// TODO read from storage
-	memset(&addr_filter, 0, sizeof(addr_filter));
-	ble_add_addr_to_filter(&test_address1);
+	int ret = 0;
+	bool success = true;
+	for(int i=0; i<DEFAULT_ADDR_FILTER_LEN; ++i){
+		bt_addr_le_t temp_addr = {
+			.type = BT_ADDR_LE_RANDOM,
+		};
+
+		ret = read_nvs_data(i, temp_addr.a.val, sizeof(temp_addr.a.val));
+		if(ret){
+			if(i != 0){
+				// At least one address found
+				break;
+			}
+			LOG_WRN("Init address filter fail(err %d), using test addresses", ret);
+			success = false;
+			break;
+		}
+
+		ble_add_addr_to_filter(&temp_addr);
+	}
+
+	if(!success){
+		memset(&addr_filter, 0, sizeof(addr_filter));
+		ble_add_addr_to_filter(&default_address_buf[0]);
+		ble_add_addr_to_filter(&default_address_buf[1]);
+		ble_add_addr_to_filter(&default_address_buf[2]);
+	}
 
 	return 0;
 }
@@ -353,6 +553,10 @@ void ble_thread_main(void)
 		return;
 	}
 
+	if(init_mbedtls_encryption()){
+		return;
+	}
+
 	LOG_DBG("Enable BLE");
 	res = bt_enable(NULL);
 	if(res){
@@ -360,8 +564,6 @@ void ble_thread_main(void)
 		return;
 	}
 
-
-	// TODO  wait for main to populate filter buffer before starting scan
 	LOG_DBG("Start scan");
 	start_scan();
 

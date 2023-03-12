@@ -10,9 +10,10 @@
 #include "output.h"
 #include "storage.h"
 #include "ble.h"
+#include "encryption.h"
 
 #define DEFAULT_ADDR_FILTER_LEN             25
 
-#define DEFAULT_TIMEOUT_FOR_SCANS_SECONDS   10
+#define DEFAULT_TIMEOUT_FOR_SCANS_SECONDS   15
 
 #endif

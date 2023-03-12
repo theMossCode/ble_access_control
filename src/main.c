@@ -10,6 +10,8 @@ K_EVENT_DEFINE(main_evts);
 extern struct k_msgq ble_msgq;
 extern struct k_msgq output_msgq;
 
+uint32_t timeout_for_scans_seconds = DEFAULT_TIMEOUT_FOR_SCANS_SECONDS;
+
 static void update_authentication_state(int state)
 {
 	struct ble_msg msg = {
@@ -33,9 +35,9 @@ static void wait_authentication()
 {
 	uint32_t evts = 0;
 
-	evts = k_event_wait(&main_evts, MAIN_EVT_BLE_DEVICE_CONNECTED, true, K_SECONDS(10));
+	evts = k_event_wait(&main_evts, MAIN_EVT_BLE_DEVICE_CONNECTED, true, K_SECONDS(timeout_for_scans_seconds));
 	if(!evts){
-		LOG_ERR("Connect device timeout");
+		LOG_WRN("Connect device timeout");
 		toggle_output(OUTPUT_MSG_TYPE_TOGGLE_LED, LED_STATE_OFF);
 		toggle_output(OUTPUT_MSG_TYPE_TOGGLE_OVERHEAD_LIGHT, LIGHT_STATE_OFF);
 		toggle_output(OUTPUT_MSG_TOGGLE_TAG_AUTHENTICATION_FAIL, LIGHT_STATE_ON);
@@ -47,7 +49,7 @@ static void wait_authentication()
 	update_authentication_state(BLE_MSG_TYPE_START_AUTHENTICATION);
 	evts = k_event_wait(&main_evts, MAIN_EVT_BLE_DEVICE_AUTHENTICATED | MAIN_EVT_BLE_DEVICE_AUTHENTICATION_FAIL, true, K_SECONDS(15));
 	if(!evts){
-		LOG_ERR("Authentication timeout");
+		LOG_WRN("Authentication timeout");
 		toggle_output(OUTPUT_MSG_TOGGLE_TAG_AUTHENTICATION_FAIL, LIGHT_STATE_ON);
 	}
 	else if(evts & MAIN_EVT_BLE_DEVICE_AUTHENTICATED){
@@ -61,6 +63,8 @@ static void wait_authentication()
 		// TODO authentication fail
 	}
 
+	// WAIT FOR BUTTON TO GO HIGH
+
 	update_authentication_state(BLE_MSG_TYPE_STOP_AUTHENTICATION);
 	toggle_output(OUTPUT_MSG_TYPE_TOGGLE_LED, LED_STATE_OFF);
 }
@@ -68,6 +72,16 @@ static void wait_authentication()
 void main()
 {
 	LOG_DBG("Start main thread");
+
+	if(init_nvs()){
+		return;
+	}
+
+	read_uicr(TS_UICR_ADDRESS, &timeout_for_scans_seconds);
+	if(timeout_for_scans_seconds >= 0xffff){
+		LOG_WRN("Scan timeout UICR(%04x) value not valid, using defaults", timeout_for_scans_seconds);
+		timeout_for_scans_seconds = DEFAULT_TIMEOUT_FOR_SCANS_SECONDS;
+	}
 
 	if(input_init()){
 		return;
@@ -78,7 +92,8 @@ void main()
 	while(1){
 		evts = k_event_wait(&main_evts, MAIN_EVT_BLE_DEVICE_FOUND | MAIN_EVT_BTN_PRESSED, true, K_SECONDS(DEFAULT_TIMEOUT_FOR_SCANS_SECONDS));
 		if(!evts){
-			LOG_INF("Scan timeout");
+			LOG_DBG("Scan timeout");
+			k_sleep(K_SECONDS(1));
 		}
 		else if(evts & MAIN_EVT_BLE_DEVICE_FOUND){
 			toggle_output(OUTPUT_MSG_TYPE_TOGGLE_OVERHEAD_LIGHT, LIGHT_STATE_ON);
